@@ -11,7 +11,7 @@ class DesktopApp:
         self.root = root
         self.root.title("Программа конвертации файлов")
         root.resizable(False, False)
-        self.root.geometry("480x600")
+        self.root.geometry("480x630")
 
         # Создаем основной фрейм
         main_frame = ttk.Frame(root, padding="10")
@@ -21,7 +21,7 @@ class DesktopApp:
         root.columnconfigure(0, weight=1)
         root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(6, weight=1)
+        main_frame.rowconfigure(7, weight=1)
 
         # Кнопка
         self.butLoadFile = ttk.Button(main_frame, 
@@ -41,13 +41,24 @@ class DesktopApp:
         self.format_combobox.grid(row=1, column=1, pady=5, sticky="ew")
         self.format_combobox.set("TXT")  # Устанавливаем значение по умолчанию
 
+        # Label
+        self.encoding_label = ttk.Label(main_frame, text="Кодировка:")
+        self.encoding_label.grid(row=2, column=0, padx=(0, 10), pady=5, sticky="w")
+
+        # Выпадающий список (Combobox)
+        self.encoding_combobox = ttk.Combobox(main_frame,
+                                            values=["UTF-8", "ANSI", "cp1251"],
+                                            state="readonly")
+        self.encoding_combobox.grid(row=2, column=1, pady=5, sticky="ew")
+        self.encoding_combobox.set("UTF-8")  # Устанавливаем значение по умолчанию
+
         # Первая строка: разделитель загружаемого файла
         self.delimiter_load_label = ttk.Label(main_frame, text="Разделитель загружаемого файла:")
-        self.delimiter_load_label.grid(row=2, column=0, padx=(0, 10), pady=5, sticky="w")
+        self.delimiter_load_label.grid(row=3, column=0, padx=(0, 10), pady=5, sticky="w")
 
         # Текстовое поле для разделителя загружаемого файла
         self.delimiter_load_entry = ttk.Entry(main_frame, width=3, justify='center')
-        self.delimiter_load_entry.grid(row=2, column=1, pady=5, sticky="w")
+        self.delimiter_load_entry.grid(row=3, column=1, pady=5, sticky="w")
         
         # Функция валидации для ограничения ввода одним символом
         def validate_input(char):
@@ -59,11 +70,11 @@ class DesktopApp:
 
        # Вторая строка: разделитель конвертируемого файла
         self.delimiter_convert_label = ttk.Label(main_frame, text="Разделитель конвертируемого файла:")
-        self.delimiter_convert_label.grid(row=3, column=0, padx=(0, 10), pady=5, sticky="w")
+        self.delimiter_convert_label.grid(row=4, column=0, padx=(0, 10), pady=5, sticky="w")
 
         # Текстовое поле с ограничением в 1 символ
         self.delimiter_convert_entry = ttk.Entry(main_frame, width=3, justify='center')
-        self.delimiter_convert_entry.grid(row=3, column=1, pady=5, sticky="w")
+        self.delimiter_convert_entry.grid(row=4, column=1, pady=5, sticky="w")
         
         vcmd = (root.register(validate_input), '%P')
         self.delimiter_convert_entry.configure(validate="key", validatecommand=vcmd)
@@ -74,11 +85,11 @@ class DesktopApp:
                                  text="Выполнить конвертацию файлов", 
                                  command=self.on_btn_run_convert
                                  )
-        self.butRun.grid(row=4, column=0, columnspan=2, pady=10, sticky="w")
+        self.butRun.grid(row=5, column=0, columnspan=2, pady=10, sticky="w")
 
          # Текстовая область для отображения файлов
         self.text_area = scrolledtext.ScrolledText(main_frame, wrap=tk.WORD, bg="#E3E3E3")
-        self.text_area.grid(row=5, column=0, columnspan=2, pady=10, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.text_area.grid(row=6, column=0, columnspan=2, pady=10, sticky=(tk.W, tk.E, tk.N, tk.S))
         self.text_area.insert(1.0, "Файлы не выбраны")
         self.text_area.config(state="disabled")
 
@@ -147,24 +158,17 @@ class DesktopApp:
             # Добавляем разделитель и новую информацию
             self.text_area.insert(tk.END, "\n" + "-" * 50 + "\n")
             self.text_area.insert(tk.END, "РЕЗУЛЬТАТЫ КОНВЕРТАЦИИ:\n")
-            self.text_area.insert(tk.END, "-" * 50 + "\n")
+            self.text_area.insert(tk.END, "-" * 50)
 
             if self.array_of_paths:            
                 for i, conv_file in enumerate(self.array_of_paths, 1):
                     # Выполняем конвертацию и получаем результат
-                    result_message = self.convert_file(conv_file)
+                    result_message = self.convert_file(i, conv_file)
 
-                    self.text_area.insert(tk.END, f"Файл {i}:\n")
-                    self.text_area.insert(tk.END, f"  Путь: {conv_file.path}\n")
-                    self.text_area.insert(tk.END, f"  Имя: {conv_file.name}\n")
-                    self.text_area.insert(tk.END, f"  Формат: {conv_file.format}\n")
-                    self.text_area.insert(tk.END, f"  Разделитель загрузки: '{self.delimiter_load_entry.get()}'\n")
-                    self.text_area.insert(tk.END, f"  Разделитель конвертации: '{self.delimiter_convert_entry.get()}'\n")
-                    self.text_area.insert(tk.END, f"  Целевой формат: {self.format_combobox.get()}\n")
-                    self.text_area.insert(tk.END, f"  Результат: {result_message}\n")
-                    self.text_area.insert(tk.END, "-" * 50 + "\n")
+                    self.text_area.insert(tk.END, f"{result_message}")
+                    self.text_area.insert(tk.END, "-" * 50)
                 
-                self.text_area.insert(tk.END, f"Обработано файлов: {len(self.array_of_paths)}\n")
+                self.text_area.insert(tk.END, f"\nОбработано файлов: {len(self.array_of_paths)}\n")
             else:
                 self.text_area.insert(tk.END, "Нет файлов для обработки\n")
 
@@ -214,12 +218,13 @@ class DesktopApp:
         finally:
             self.text_area.config(state="disabled")
 
-    def convert_file(self, conv_file):
+    def convert_file(self, i, conv_file):
         try:
             # Получаем разделители
             delimiter_load = self.delimiter_load_entry.get() if self.delimiter_load_entry.get() else ','
             delimiter_convert = self.delimiter_convert_entry.get() if self.delimiter_convert_entry.get() else ','
             target_format = self.format_combobox.get().lower()
+            encoding_format = self.encoding_combobox.get().lower()
 
             if conv_file.format == 'xlsx':
                 # Читаем Excel файл по полному пути
@@ -229,9 +234,10 @@ class DesktopApp:
                 return f"Успешно конвертирован в {output_filename}"
             elif conv_file.format in ['csv', 'txt']:
                 # Читаем CSV/TXT файл по полному пути
-                df = pd.read_csv(conv_file.path, sep=delimiter_load, dtype=str)
+                df = pd.read_csv(conv_file.path, sep=delimiter_load,
+                                 dtype=str, encoding=encoding_format)
             else:
-                return f"Формат файла .{conv_file.format} не поддерживается"
+                return f"\nФормат файла .{conv_file.format} не поддерживается\n"
                 
             # Определяем расширение для выходного файла
             if target_format == 'xlsx':
@@ -239,23 +245,53 @@ class DesktopApp:
                 df.to_excel(output_filename, index=False)
             elif target_format in ['csv', 'txt']:
                 output_filename = f"{conv_file.name}_converted.{target_format}"
-                df.to_csv(output_filename, sep=delimiter_convert, index=False)   
+                df.to_csv(output_filename, sep=delimiter_convert, index=False,
+                          encoding=encoding_format)
             else:
-                return f"Неизвестный формат файла: {target_format}"
+                return f"""
+Файл {i}. Результат:
+   Путь: {conv_file.path}
+   Имя: {conv_file.name}
+   Формат: {conv_file.format}
+   Разделитель загрузки: '{self.delimiter_load_entry.get()}'
+   Разделитель конвертации: '{self.delimiter_convert_entry.get()}'
+   Кодировка: '{self.encoding_combobox.get()}'
+   Целевой формат: {self.format_combobox.get()}
+   Неизвестный формат файла: {target_format}
+"""
 
-            return f"Успешно конвертирован в {output_filename}"
+            return f"""
+Файл {i}. Результат:
+   Путь: {conv_file.path}
+   Имя: {conv_file.name}
+   Формат: {conv_file.format}
+   Разделитель загрузки: '{self.delimiter_load_entry.get()}'
+   Разделитель конвертации: '{self.delimiter_convert_entry.get()}'
+   Кодировка: '{self.encoding_combobox.get()}'
+   Целевой формат: {self.format_combobox.get()}
+   Результат: Успешно конвертирован в {output_filename}
+"""
         except Exception as e:
-            return f"Ошибка конвертации: {str(e)}"
+            return f"""
+Файл {i}. Результат:
+   Путь: {conv_file.path}
+   Имя: {conv_file.name}
+   Формат: {conv_file.format}
+   Разделитель загрузки: '{self.delimiter_load_entry.get()}'
+   Разделитель конвертации: '{self.delimiter_convert_entry.get()}'
+   Кодировка: '{self.encoding_combobox.get()}'
+   Целевой формат: {self.format_combobox.get()}
+   Ошибка конвертации: {str(e)}
+"""
 
     class ConversionFile:
          def __init__(self, path):
-            self.path = path    # имя человека
+            self.path = path
             self.name = Path(path).stem
-            # Безопасное получение расширения
             if '.' in path:
                 self.format = path.rsplit('.', 1)[1].lower()
             else:
-                self.format = "нет расширения"
+                self.format = "Нет расширения"
 
 def main():
     root = tk.Tk()
