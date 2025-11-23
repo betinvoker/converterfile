@@ -1,4 +1,4 @@
-import sys
+import sys, csv
 import pandas as pd
 import traceback
 import tkinter as tk
@@ -11,7 +11,10 @@ class DesktopApp:
         self.root = root
         self.root.title("Программа конвертации файлов")
         root.resizable(False, False)
-        self.root.geometry("480x630")
+        self.root.geometry("480x575")
+
+        # Переменные для чекбоксов
+        self.removing_spaces_var = tk.BooleanVar(value=False)  # По умолчанию выключен
 
         # Создаем основной фрейм
         main_frame = ttk.Frame(root, padding="10")
@@ -21,7 +24,7 @@ class DesktopApp:
         root.columnconfigure(0, weight=1)
         root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(7, weight=1)
+        main_frame.rowconfigure(8, weight=1)
 
         # Кнопка
         self.butLoadFile = ttk.Button(main_frame, 
@@ -36,7 +39,7 @@ class DesktopApp:
 
         # Выпадающий список (Combobox)
         self.format_combobox = ttk.Combobox(main_frame, 
-                                           values=["CSV", "TXT", "XLSX"],
+                                           values=["CSV", "TXT", "XLSX", "UNL"],
                                            state="readonly")
         self.format_combobox.grid(row=1, column=1, pady=5, sticky="ew")
         self.format_combobox.set("TXT")  # Устанавливаем значение по умолчанию
@@ -80,21 +83,54 @@ class DesktopApp:
         self.delimiter_convert_entry.configure(validate="key", validatecommand=vcmd)
         self.delimiter_convert_entry.insert(0, "")  # Устанавливаем значение по умолчанию
 
+        # ЧЕКБОКСЫ - новая секция
+        options_frame = ttk.LabelFrame(main_frame, text="Дополнительные опции", padding=5)
+        options_frame.grid(row=5, column=0, columnspan=2, pady=10, sticky="ew")
+        
+        # Чекбокс. Удаление лишних пробелов и скрытых символов
+        self.removing_spaces_var_checkbox = ttk.Checkbutton(
+            options_frame,
+            text="Удаление лишних пробелов и скрытых символов",
+            variable=self.removing_spaces_var,
+            command=self.on_options_change
+        )
+        self.removing_spaces_var_checkbox.grid(row=0, column=0, sticky="w", pady=2)
+
         # Кнопка
         self.butRun = ttk.Button(main_frame, 
                                  text="Выполнить конвертацию файлов", 
                                  command=self.on_btn_run_convert
                                  )
-        self.butRun.grid(row=5, column=0, columnspan=2, pady=10, sticky="w")
+        self.butRun.grid(row=6, column=0, columnspan=2, pady=10, sticky="w")
 
          # Текстовая область для отображения файлов
-        self.text_area = scrolledtext.ScrolledText(main_frame, wrap=tk.WORD, bg="#E3E3E3")
-        self.text_area.grid(row=6, column=0, columnspan=2, pady=10, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.text_area = scrolledtext.ScrolledText( main_frame, 
+                                                    wrap=tk.WORD, 
+                                                    bg="#E3E3E3",
+                                                    height=18,  # Уменьшаем высоту до 6 строк
+                                                    width=50,  # Уменьшаем ширину
+                                                    font=('Arial', 8))
+        self.text_area.grid(row=7, column=0, columnspan=2, pady=10, sticky=(tk.W, tk.E, tk.N, tk.S))
         self.text_area.insert(1.0, "Файлы не выбраны")
         self.text_area.config(state="disabled")
 
         # Инициализируем массив для хранения файлов
         self.array_of_paths = []
+
+    def on_options_change(self):
+        """Обработчик изменения состояния чекбоксов"""
+        options = []
+        if self.removing_spaces_var.get():
+            options.append("* Удаление лишних пробелов и скрытых символов")
+
+        # Выводим данные из array_of_paths в text_area (добавляем к существующему содержимому)
+        self.text_area.config(state="normal")
+        self.text_area.insert(tk.END, "\n")
+        self.text_area.insert(tk.END, "-" * 50)
+        self.text_area.insert(tk.END, f"\nВЫБРАННЫЕ ОПЦИИ:\n")
+        self.text_area.insert(tk.END, "-" * 50)
+        self.text_area.insert(tk.END, f"\n{', '.join(options)}")
+        self.text_area.config(state="disabled")
 
     def on_but_click_load_file(self):
         # Очищаем TEXT_AREA
@@ -109,7 +145,8 @@ class DesktopApp:
                 ("Все файлы", "*.*"),
                 ("Текстовые файлы", "*.txt"),
                 ("CSV файлы", "*.csv"),
-                ("Excel файлы", "*.xlsx")
+                ("Excel файлы", "*.xlsx"),
+                ("UNL файлы", "*.unl")
             ]
         )
                     
@@ -144,7 +181,8 @@ class DesktopApp:
                             and not file_path.startswith("Файл ") and not line.startswith("  Путь:") \
                             and not line.startswith("  Имя:") and not line.startswith("  Формат:") \
                             and not line.startswith("  Разделитель") and not line.startswith("  Целевой формат:") \
-                            and not line.startswith("-" * 40):
+                            and not line.startswith("-" * 50) and not line.startswith("ВЫБРАННЫЕ ОПЦИИ:") \
+                            and not line.startswith("*"):
                         # Создаем объект ConversionFile и добавляем в массив
                         conversion_file = self.ConversionFile(file_path)
                         self.array_of_paths.append(conversion_file)
@@ -226,24 +264,45 @@ class DesktopApp:
             target_format = self.format_combobox.get().lower()
             encoding_format = self.encoding_combobox.get().lower()
 
+            delimiter_display = self.delimiter_convert_entry.get() if target_format != "xlsx" else ""
+
+            df = None
+
             if conv_file.format == 'xlsx':
-                # Читаем Excel файл по полному пути
+                # Читаем Excel файл по полному пути 
                 df = pd.read_excel(conv_file.path, dtype=str)
-                output_filename = f"{conv_file.name}_converted.xlsx"
-                df.to_excel(output_filename, index=False)
-                return f"Успешно конвертирован в {output_filename}"
-            elif conv_file.format in ['csv', 'txt']:
-                # Читаем CSV/TXT файл по полному пути
+            elif conv_file.format in ['csv', 'txt', 'unl']:
+                # Читаем CSV/TXT/UNL файл по полному пути
                 df = pd.read_csv(conv_file.path, sep=delimiter_load,
                                  dtype=str, encoding=encoding_format)
             else:
                 return f"\nФормат файла .{conv_file.format} не поддерживается\n"
+
+            # ПРИМЕНЯЕМ УДАЛЕНИЕ ПРОБЕЛОВ КО ВСЕМ ФАЙЛАМ, если опция включена
+            if self.removing_spaces_var.get() and df is not None:
+                # 1. Обрабатываем заголовки столбцов
+                df.columns = df.columns.str.strip()  # Удаляем пробелы по краям
+                df.columns = df.columns.str.replace(r'\s+', ' ', regex=True)  # Заменяем множественные пробелы на один
                 
+                # 2. Обрабатываем данные в ячейках
+                # Выбираем только строковые колонки
+                string_columns = df.select_dtypes(include=['object']).columns
+
+                for column in string_columns:
+                    # Удаляем пробелы в начале и конце (включая первый символ если это пробел)
+                    df[column] = df[column].str.strip()
+                    # Заменяем множественные пробелы на один
+                    df[column] = df[column].str.replace(r'\s+', ' ', regex=True)
+                    
+                # ДЛЯ ОТЛАДКИ: выведем первые несколько строк чтобы проверить результат
+                print("После очистки пробелов:")
+                print(df.head())
+
             # Определяем расширение для выходного файла
             if target_format == 'xlsx':
                 output_filename = f"{conv_file.name}_converted.xlsx"
                 df.to_excel(output_filename, index=False)
-            elif target_format in ['csv', 'txt']:
+            elif target_format in ['csv', 'txt', 'unl']:
                 output_filename = f"{conv_file.name}_converted.{target_format}"
                 df.to_csv(output_filename, sep=delimiter_convert, index=False,
                           encoding=encoding_format)
@@ -254,7 +313,7 @@ class DesktopApp:
    Имя: {conv_file.name}
    Формат: {conv_file.format}
    Разделитель загрузки: '{self.delimiter_load_entry.get()}'
-   Разделитель конвертации: '{self.delimiter_convert_entry.get()}'
+   Разделитель конвертации: '{delimiter_display}'
    Кодировка: '{self.encoding_combobox.get()}'
    Целевой формат: {self.format_combobox.get()}
    Неизвестный формат файла: {target_format}
@@ -266,10 +325,10 @@ class DesktopApp:
    Имя: {conv_file.name}
    Формат: {conv_file.format}
    Разделитель загрузки: '{self.delimiter_load_entry.get()}'
-   Разделитель конвертации: '{self.delimiter_convert_entry.get()}'
+   Разделитель конвертации: '{delimiter_display}'
    Кодировка: '{self.encoding_combobox.get()}'
    Целевой формат: {self.format_combobox.get()}
-   Результат: Успешно конвертирован в {output_filename}
+   Результат: Успешно сконвертирован в {output_filename}
 """
         except Exception as e:
             return f"""
@@ -278,7 +337,7 @@ class DesktopApp:
    Имя: {conv_file.name}
    Формат: {conv_file.format}
    Разделитель загрузки: '{self.delimiter_load_entry.get()}'
-   Разделитель конвертации: '{self.delimiter_convert_entry.get()}'
+   Разделитель конвертации: '{delimiter_display}'
    Кодировка: '{self.encoding_combobox.get()}'
    Целевой формат: {self.format_combobox.get()}
    Ошибка конвертации: {str(e)}
