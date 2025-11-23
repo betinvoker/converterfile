@@ -11,7 +11,7 @@ class DesktopApp:
         self.root = root
         self.root.title("Программа конвертации файлов")
         root.resizable(False, False)
-        self.root.geometry("480x575")
+        self.root.geometry("480x545")
 
         # Переменные для чекбоксов
         self.removing_spaces_var = tk.BooleanVar(value=False)  # По умолчанию выключен
@@ -92,7 +92,7 @@ class DesktopApp:
             options_frame,
             text="Удаление лишних пробелов и скрытых символов",
             variable=self.removing_spaces_var,
-            command=self.on_options_change
+            # command=self.on_options_change
         )
         self.removing_spaces_var_checkbox.grid(row=0, column=0, sticky="w", pady=2)
 
@@ -107,7 +107,7 @@ class DesktopApp:
         self.text_area = scrolledtext.ScrolledText( main_frame, 
                                                     wrap=tk.WORD, 
                                                     bg="#E3E3E3",
-                                                    height=18,  # Уменьшаем высоту до 6 строк
+                                                    height=16,  # Уменьшаем высоту до 6 строк
                                                     width=50,  # Уменьшаем ширину
                                                     font=('Arial', 8))
         self.text_area.grid(row=7, column=0, columnspan=2, pady=10, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -129,7 +129,7 @@ class DesktopApp:
         self.text_area.insert(tk.END, "-" * 50)
         self.text_area.insert(tk.END, f"\nВЫБРАННЫЕ ОПЦИИ:\n")
         self.text_area.insert(tk.END, "-" * 50)
-        self.text_area.insert(tk.END, f"\n{', '.join(options)}")
+        self.text_area.insert(tk.END, "\n" + "\n".join(options))
         self.text_area.config(state="disabled")
 
     def on_but_click_load_file(self):
@@ -186,6 +186,9 @@ class DesktopApp:
                         # Создаем объект ConversionFile и добавляем в массив
                         conversion_file = self.ConversionFile(file_path)
                         self.array_of_paths.append(conversion_file)
+
+            #Обработчик изменения состояния чекбоксов
+            self.on_options_change()
 
             # Выводим данные из array_of_paths в text_area (добавляем к существующему содержимому)
             self.text_area.config(state="normal")
@@ -273,8 +276,8 @@ class DesktopApp:
                 df = pd.read_excel(conv_file.path, dtype=str)
             elif conv_file.format in ['csv', 'txt', 'unl']:
                 # Читаем CSV/TXT/UNL файл по полному пути
-                df = pd.read_csv(conv_file.path, sep=delimiter_load,
-                                 dtype=str, encoding=encoding_format)
+                # РУЧНОЕ ЧТЕНИЕ И АНАЛИЗ ФАЙЛА
+                df = self._smart_file_reader(conv_file.path, delimiter_load, encoding_format)
             else:
                 return f"\nФормат файла .{conv_file.format} не поддерживается\n"
 
@@ -293,11 +296,7 @@ class DesktopApp:
                     df[column] = df[column].str.strip()
                     # Заменяем множественные пробелы на один
                     df[column] = df[column].str.replace(r'\s+', ' ', regex=True)
-                    
-                # ДЛЯ ОТЛАДКИ: выведем первые несколько строк чтобы проверить результат
-                print("После очистки пробелов:")
-                print(df.head())
-
+         
             # Определяем расширение для выходного файла
             if target_format == 'xlsx':
                 output_filename = f"{conv_file.name}_converted.xlsx"
@@ -342,6 +341,82 @@ class DesktopApp:
    Целевой формат: {self.format_combobox.get()}
    Ошибка конвертации: {str(e)}
 """
+
+    def _smart_file_reader(self, file_path, delimiter, encoding):
+        """Умное чтение файла с автоматическим определением структуры"""
+        with open(file_path, 'r', encoding=encoding) as f:
+            lines = f.readlines()
+        
+        # Функция для проверки является ли строка разделителем
+        def is_delimiter_line(line):
+            if not line.strip():
+                return False
+            # Проверяем, содержит ли строка только символы разделителей
+            return all(char in '-=| ' for char in line.strip())
+        
+        # Функция для разбора строки на колонки
+        def parse_line(line):
+            return [part.strip() for part in line.split(delimiter)]
+        
+        # Ищем структуру файла
+        header_found = False
+        headers = None
+        data_rows = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Пропускаем строки-разделители
+            if is_delimiter_line(line):
+                continue
+                
+            parts = parse_line(line)
+            
+            # Если еще не нашли заголовки
+            if not header_found:
+                # Проверяем, похожа ли строка на заголовки
+                # Заголовки обычно содержат текст (буквы), а не только цифры
+                looks_like_header = any(
+                    any(c.isalpha() for c in part) for part in parts
+                ) if parts else False
+                
+                if looks_like_header:
+                    headers = parts
+                    header_found = True
+                else:
+                    # Если первая не-разделительная строка не похожа на заголовки, 
+                    # но содержит данные - создаем автоматические заголовки
+                    if len(parts) > 1:
+                        headers = [f"Column_{i+1}" for i in range(len(parts))]
+                        header_found = True
+                        # Добавляем текущую строку как данные
+                        data_rows.append(parts)
+            else:
+                # После нахождения заголовков добавляем данные
+                if len(parts) == len(headers):
+                    data_rows.append(parts)
+                elif len(parts) > len(headers):
+                    # Если больше колонок, обрезаем до размера заголовков
+                    data_rows.append(parts[:len(headers)])
+                else:
+                    # Если меньше колонок, дополняем пустыми значениями
+                    padded_parts = parts + [''] * (len(headers) - len(parts))
+                    data_rows.append(padded_parts)
+        
+        # Если не нашли заголовки, но есть данные
+        if not header_found and data_rows:
+            headers = [f"Column_{i+1}" for i in range(len(data_rows[0]))]
+        
+        # Создаем DataFrame
+        if headers and data_rows:
+            return pd.DataFrame(data_rows, columns=headers)
+        elif headers:
+            return pd.DataFrame(columns=headers)
+        else:
+            # Если ничего не нашли, возвращаем пустой DataFrame
+            return pd.DataFrame()
 
     class ConversionFile:
          def __init__(self, path):
