@@ -1,4 +1,4 @@
-import sys, csv
+import sys, csv, re
 import pandas as pd
 import traceback
 import tkinter as tk
@@ -266,14 +266,15 @@ class DesktopApp:
             delimiter_convert = self.delimiter_convert_entry.get() if self.delimiter_convert_entry.get() else ','
             target_format = self.format_combobox.get().lower()
             encoding_format = self.encoding_combobox.get().lower()
-
             delimiter_display = self.delimiter_convert_entry.get() if target_format != "xlsx" else ""
 
             df = None
 
             if conv_file.format == 'xlsx':
                 # Читаем Excel файл по полному пути 
-                df = pd.read_excel(conv_file.path, dtype=str)
+                df = pd.read_excel(conv_file.path)
+                for col in df.columns:
+                    df[col] = df[col].astype(str)
             elif conv_file.format in ['csv', 'txt', 'unl']:
                 # Читаем CSV/TXT/UNL файл по полному пути
                 # РУЧНОЕ ЧТЕНИЕ И АНАЛИЗ ФАЙЛА
@@ -283,20 +284,25 @@ class DesktopApp:
 
             # ПРИМЕНЯЕМ УДАЛЕНИЕ ПРОБЕЛОВ КО ВСЕМ ФАЙЛАМ, если опция включена
             if self.removing_spaces_var.get() and df is not None:
-                # 1. Обрабатываем заголовки столбцов
-                df.columns = df.columns.str.strip()  # Удаляем пробелы по краям
-                df.columns = df.columns.str.replace(r'\s+', ' ', regex=True)  # Заменяем множественные пробелы на один
-                
-                # 2. Обрабатываем данные в ячейках
-                # Выбираем только строковые колонки
-                string_columns = df.select_dtypes(include=['object']).columns
+                # Проверяем, что DataFrame не пуст
+                if not df.empty:
+                    # 1. Обрабатываем заголовки столбцов
+                    df.columns = pd.Series(df.columns, dtype=str) \
+                        .str.strip().str.replace(r'\s+', ' ', regex=True).values
 
-                for column in string_columns:
-                    # Удаляем пробелы в начале и конце (включая первый символ если это пробел)
-                    df[column] = df[column].str.strip()
-                    # Заменяем множественные пробелы на один
-                    df[column] = df[column].str.replace(r'\s+', ' ', regex=True)
-         
+                    # 2. Обрабатываем данные в ячейках
+                    # Выбираем только строковые колонки
+                    string_columns = df.select_dtypes(include=['object']).columns
+                    if len(string_columns) > 0:
+                        for column in string_columns:
+                            # Удаляем пробелы в начале и конце (включая первый символ если это пробел)
+                            # Заменяем множественные пробелы на один
+                            df[column] = df[column].apply(
+                                lambda x: re.sub(r'\s+', ' ', str(x).strip())
+                                if not isinstance(x, (pd.Series, pd.DataFrame)) and pd.notna(x)
+                                else ""
+                            )
+
             # Определяем расширение для выходного файла
             if target_format == 'xlsx':
                 output_filename = f"{conv_file.name}_converted.xlsx"
@@ -339,84 +345,69 @@ class DesktopApp:
    Разделитель конвертации: '{delimiter_display}'
    Кодировка: '{self.encoding_combobox.get()}'
    Целевой формат: {self.format_combobox.get()}
-   Ошибка конвертации: {str(e)}
+--------------------------------------------------
+Ошибка конвертации: {type(e).__name__}
+Сообщение: {str(e)}
+--------------------------------------------------
+ПОЛНАЯ ТРАССИРОВКА СТЕКА:
+--------------------------------------------------
+{traceback.format_exc()}
 """
 
     def _smart_file_reader(self, file_path, delimiter, encoding):
         """Умное чтение файла с автоматическим определением структуры"""
         with open(file_path, 'r', encoding=encoding) as f:
             lines = f.readlines()
-        
+
         # Функция для проверки является ли строка разделителем
         def is_delimiter_line(line):
             if not line.strip():
                 return False
             # Проверяем, содержит ли строка только символы разделителей
             return all(char in '-=| ' for char in line.strip())
-        
-        # Функция для разбора строки на колонки
-        def parse_line(line):
-            return [part.strip() for part in line.split(delimiter)]
-        
-        # Ищем структуру файла
-        header_found = False
-        headers = None
+
+        def is_cleaned_lines(lines):
+            arr_cleaned_lines = []
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Пропускаем строки-разделители
+                if is_delimiter_line(line):
+                    continue
+                # Убираем лишние пробелы вокруг разделителя
+                line = line.replace(f' {delimiter}', f'{delimiter}').replace(f'{delimiter} ', f'{delimiter}')
+                arr_cleaned_lines.append(line)
+
+            if not arr_cleaned_lines:
+                return pd.DataFrame()
+            return arr_cleaned_lines
+
+        cleaned_lines = is_cleaned_lines(lines)
+
+        # Определяем максимальное количество столбцов
+        max_cols = max(len(line.split(delimiter)) for line in cleaned_lines)
+
+        # Автоматические заголовки
+        headers = [f"Column_{i + 1}" for i in range(max_cols)]
+
+        # Парсим строки
         data_rows = []
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-                
-            # Пропускаем строки-разделители
-            if is_delimiter_line(line):
-                continue
-                
-            parts = parse_line(line)
-            
-            # Если еще не нашли заголовки
-            if not header_found:
-                # Проверяем, похожа ли строка на заголовки
-                # Заголовки обычно содержат текст (буквы), а не только цифры
-                looks_like_header = any(
-                    any(c.isalpha() for c in part) for part in parts
-                ) if parts else False
-                
-                if looks_like_header:
-                    headers = parts
-                    header_found = True
-                else:
-                    # Если первая не-разделительная строка не похожа на заголовки, 
-                    # но содержит данные - создаем автоматические заголовки
-                    if len(parts) > 1:
-                        headers = [f"Column_{i+1}" for i in range(len(parts))]
-                        header_found = True
-                        # Добавляем текущую строку как данные
-                        data_rows.append(parts)
-            else:
-                # После нахождения заголовков добавляем данные
-                if len(parts) == len(headers):
-                    data_rows.append(parts)
-                elif len(parts) > len(headers):
-                    # Если больше колонок, обрезаем до размера заголовков
-                    data_rows.append(parts[:len(headers)])
-                else:
-                    # Если меньше колонок, дополняем пустыми значениями
-                    padded_parts = parts + [''] * (len(headers) - len(parts))
-                    data_rows.append(padded_parts)
-        
-        # Если не нашли заголовки, но есть данные
-        if not header_found and data_rows:
-            headers = [f"Column_{i+1}" for i in range(len(data_rows[0]))]
-        
-        # Создаем DataFrame
-        if headers and data_rows:
-            return pd.DataFrame(data_rows, columns=headers)
-        elif headers:
-            return pd.DataFrame(columns=headers)
-        else:
-            # Если ничего не нашли, возвращаем пустой DataFrame
-            return pd.DataFrame()
+        for line in cleaned_lines:
+            parts = line.split(delimiter)
+            if len(parts) < max_cols:
+                parts.extend([''] * (max_cols - len(parts)))
+            elif len(parts) > max_cols:
+                parts = parts[:max_cols]
+            data_rows.append(parts)
+
+        # Создаём DataFrame и **приводим ВСЁ к строкам**
+        df = pd.DataFrame(data_rows, columns=headers)
+        for col in df.columns:
+            df[col] = df[col].astype(str)
+
+        return df
 
     class ConversionFile:
          def __init__(self, path):
